@@ -1,147 +1,110 @@
-# Runtime, Research, and ReAct Hardening Design
+# Minimal Runtime, Tool, and Research Hardening Design
 
 ## 1. Purpose
 
-This change closes the highest-priority gaps found in the Version 2 review:
+This change improves the current Shannon-inspired prototype without turning it
+into a production-scale orchestration platform. It keeps the existing API,
+SQLite database, workflows, replay model, and UI behavior stable.
 
-- cancellation must stop orchestration after the current blocking call returns;
-- task timeout, step count, tool calls, and token estimates must be observable and enforced;
-- the research workflow must use the registered research tools as one coherent pipeline;
-- ReAct must select every supported read-only functional tool through structured LLM decisions;
-- `web_fetch` and `calculator` must resist unsafe or resource-intensive inputs.
+The implementation focuses on:
 
-The implementation must preserve the existing FastAPI API, SQLite persistence, event stream, replay format, task-scoped sub-agents, and current UI behavior.
+- practical cancellation checkpoints;
+- basic timeout and token observability;
+- a useful research pipeline;
+- structured selection of existing functional tools;
+- safe web fetch and calculator limits;
+- task-scoped report creation and archive generation.
 
 ## 2. Scope
 
 Included:
 
-- runtime cancellation checkpoints;
-- tracked background task lifecycle;
-- task-level runtime budget state;
-- token usage accumulation from every LLM call;
-- task timeout and step/tool/token guardrails;
-- complete research pipeline;
-- general read-only ReAct loop;
-- DNS- and redirect-aware public URL validation;
-- calculator complexity limits;
-- focused regression and integration tests.
+- cancellation checks between workflow steps, tool calls, agent rounds, and DAG
+  layers;
+- task timeout;
+- task-level token estimate accumulation;
+- existing tool-call limits;
+- multi-query research with deduplication;
+- fetching up to two safe pages;
+- citation checking and at most one supplemental search;
+- structured ReAct decisions for the five existing functional tools;
+- `artifact_writer` for Markdown, text, JSON, and CSV;
+- `artifact_archiver` for ZIP creation;
+- artifact listing and controlled download;
+- focused regression tests.
 
 Excluded:
 
-- UI redesign;
-- authentication or multi-user ownership;
-- shell, file-write, download, browser automation, or code execution tools;
-- cross-task long-term memory;
-- Go implementation;
-- broad refactoring unrelated to the reviewed gaps.
+- a general workflow engine rewrite;
+- complex budget degradation algorithms;
+- model fallback;
+- Supervisor supplemental worker rounds;
+- a complete step executor for `plan_execute`;
+- arbitrary filesystem access;
+- shell or code execution;
+- remote file download;
+- cross-task memory;
+- authentication and multi-user isolation;
+- UI redesign.
 
-## 3. Runtime Control Architecture
+## 3. Runtime Control
 
-Add a task-scoped `RuntimeController` owned by the Orchestrator. It provides:
+The Orchestrator uses small repository-backed checks rather than a new runtime
+subsystem.
 
-- `checkpoint(task_id, step_name)` to reject cancelled, timed-out, or exhausted tasks;
-- elapsed-time tracking from task start;
-- step accounting;
-- token accounting;
-- a terminal reason suitable for events and degraded results.
+Add:
 
-The controller reads cancellation from the repository so API cancellation remains the source of truth. Checkpoints occur:
+- `TASK_TIMEOUT_SECONDS`, default `600`;
+- a task start-time check based on persisted timestamps;
+- `checkpoint(task_id)` in the Orchestrator;
+- repository token increment support.
+
+Checkpoints run:
 
 - after routing;
-- before and after every LLM operation;
-- before every tool call;
-- before each Supervisor or Swarm round;
+- before and after tool calls;
+- before Supervisor and Swarm rounds;
 - before each DAG layer;
-- before final synthesis and persistence.
+- before final synthesis and result persistence.
 
-An in-flight HTTP call is not forcibly interrupted. After it returns, its result is discarded if the next checkpoint detects cancellation.
+Cancellation remains cooperative. An in-flight HTTP or LLM request may finish,
+but its output must not start another workflow step or persist a final result.
 
-`TaskService` keeps references to background `asyncio.Task` objects by task ID. Completed tasks are removed through a done callback. Unexpected background exceptions are consumed by the callback because the Orchestrator has already persisted the failure state.
+Every successful LLM response increments `tasks.token_estimate`. Token estimates
+are for visibility only in this phase; there is no token hard stop.
 
-## 4. Budget Model
+## 4. Research Workflow
 
-Add these settings with conservative defaults:
+The research flow is:
 
-- `TASK_TIMEOUT_SECONDS=600`;
-- `MAX_TASK_STEPS=40`;
-- `MAX_TASK_TOKENS=100000`.
-
-Existing limits remain:
-
-- global tool call limit;
-- ReAct tool call limit;
-- agent and concurrency limits;
-- Swarm round limit.
-
-Every LLM response contributes its `token_estimate` to the task record. The repository exposes an atomic increment operation. Token counts are observability estimates, not billing values.
-
-Budget behavior:
-
-- cancellation produces `cancelled` and never writes a final result;
-- timeout or token/step exhaustion before usable intermediate data produces `failed`;
-- exhaustion after usable evidence or worker output produces a degraded synthesis without further LLM calls;
-- a budget event records the limit, current value, and stopping reason.
-
-The first implementation may use a deterministic fallback renderer for degraded completion.
-
-## 5. LLM Accounting Boundary
-
-Introduce a task-aware LLM wrapper rather than modifying every workflow call manually. The wrapper:
-
-- delegates to the configured LLM client;
-- performs a runtime checkpoint before and after the request;
-- increments the task token estimate after a successful response;
-- preserves the existing `LLMClient` protocol.
-
-The Orchestrator and `AgentRuntime` receive this task-aware client for the duration of a task. Structured-output repair and retry calls are therefore counted automatically.
-
-## 6. Research Pipeline
-
-The research workflow becomes:
-
-1. create 3 to 5 planned queries;
-2. run multiple Tavily searches, up to the configured query limit;
+1. create up to five queries;
+2. execute at least two distinct queries when available;
 3. deduplicate results by normalized URL;
-4. rank results deterministically using search rank, query coverage, and source diversity;
-5. persist search evidence;
-6. fetch up to `research_auto_fetch_pages` top safe URLs;
-7. persist fetched-page evidence separately from search snippets;
-8. synthesize from persisted evidence;
-9. run `citation_checker`;
-10. run `result_critic`;
-11. perform at most one supplemental search if citations are insufficient or the critic requests revision;
-12. synthesize once more only when supplemental evidence was added.
+4. keep the highest-ranked configured number of results;
+5. fetch up to two top public pages through `web_fetch`;
+6. include fetched text and search snippets in synthesis context;
+7. run `citation_checker`;
+8. run `result_critic`;
+9. perform at most one supplemental search when citations are invalid or the
+   critic rejects the answer;
+10. return completed or degraded output from persisted evidence.
 
-Search and fetch failures are isolated. A failed fetch does not discard its search evidence.
+Search and fetch failures are isolated. A failed fetch does not remove its
+search-result evidence. No evidence produces a clear task failure.
 
-The workflow returns:
+## 5. ReAct Workflow
 
-- `completed` when synthesis, citations, and critic checks are acceptable;
-- `degraded` when usable evidence exists but checking, fetching, or final synthesis is incomplete;
-- `failed` only when no usable evidence exists or runtime limits prevent any meaningful result.
+Add a structured `ReactDecision`:
 
-`citation_checker` must emit `citation_check_completed`. Critic results influence task status; they are no longer observability-only.
+- `action`: `tool_call` or `final_answer`;
+- `tool_name`;
+- `arguments`;
+- `summary`;
+- optional `answer`.
 
-## 7. General ReAct Loop
-
-Add structured models:
-
-- `ReactDecision` with action `tool_call` or `final_answer`;
-- tool name;
-- validated argument object;
-- reasoning summary intended for events, not hidden chain-of-thought;
-- optional final answer.
-
-Loop behavior:
-
-1. provide the user task, supported tool specifications, and prior tool observations to the LLM;
-2. parse one structured decision;
-3. validate the selected tool against the ReAct allowlist;
-4. execute centrally through `ToolExecutor`;
-5. append the result as an observation;
-6. repeat until `final_answer` or five tool calls;
-7. use normal final synthesis to produce the stored result.
+The Orchestrator presents the available functional tools and previous
+observations to the LLM. It validates the decision, executes the requested tool
+centrally, records the observation, and repeats up to five tool calls.
 
 Allowed tools:
 
@@ -151,96 +114,176 @@ Allowed tools:
 - `unit_converter`;
 - `calculator`.
 
-If structured decisions repeatedly fail, use the existing deterministic weather/time detection as a fallback. A missing requested tool produces a degraded answer with a clear limitation rather than an unrelated tool call.
+The existing deterministic weather/time behavior remains as fallback when a
+structured decision cannot be parsed. Missing or disallowed tools produce a
+degraded answer with a limitation.
 
-## 8. Tool Safety
+## 6. Task Artifact Tools
+
+Artifacts are stored only below:
+
+```text
+artifacts/<task_id>/
+```
+
+### Artifact Writer
+
+`artifact_writer` creates one new file for the current task.
+
+Supported formats:
+
+- `.md`;
+- `.txt`;
+- `.json`;
+- `.csv`.
+
+Inputs:
+
+- requested filename;
+- format;
+- content;
+- optional structured rows for JSON or CSV.
+
+Rules:
+
+- reject absolute paths, directory separators, `..`, device names, and hidden
+  filenames;
+- sanitize the base filename;
+- never overwrite an existing file;
+- maximum 10 artifacts per task;
+- maximum 1 MiB per artifact;
+- use UTF-8;
+- JSON and CSV are serialized using standard-library writers rather than string
+  concatenation.
+
+### Artifact Archiver
+
+`artifact_archiver` creates a ZIP containing the current task's generated
+artifacts.
+
+Rules:
+
+- include only files already registered for the same task;
+- do not include an existing ZIP in another ZIP;
+- maximum uncompressed input size 5 MiB;
+- never overwrite an existing archive;
+- archive members use safe base filenames only.
+
+Artifacts are not visible to sub-agents unless the Orchestrator explicitly
+passes their metadata. Tools cannot read arbitrary local files.
+
+## 7. Artifact Persistence and API
+
+Add an `artifacts` table:
+
+- `artifact_id`;
+- `task_id`;
+- `filename`;
+- `media_type`;
+- `size_bytes`;
+- `relative_path`;
+- `created_at`.
+
+Repository methods:
+
+- register artifact;
+- list artifacts for task;
+- get artifact by task and artifact ID;
+- count and total artifact size.
+
+API:
+
+- `GET /tasks/{task_id}/artifacts`;
+- `GET /tasks/{task_id}/artifacts/{artifact_id}`.
+
+The download endpoint:
+
+- looks up the artifact by both task ID and artifact ID;
+- resolves the stored path under the configured artifact root;
+- rejects missing files and any path escaping the task directory;
+- returns `Content-Disposition: attachment`;
+- never accepts a filesystem path from the client.
+
+Artifact operations are persisted as normal tool calls and emitted in the
+existing event stream.
+
+## 8. Tool Invocation Policy
+
+Artifact tools are centrally registered and executed through `ToolExecutor`.
+
+They may be selected only when the user explicitly requests an output file,
+report, table export, JSON export, CSV export, or archive. They are not part of
+the normal ReAct allowlist.
+
+The Orchestrator may call them after final content has been produced. A failed
+artifact operation degrades the task but does not discard the textual answer.
+
+No tool may:
+
+- access another task directory;
+- access source files, `.env`, or the database;
+- execute generated content;
+- create executable file formats;
+- follow symbolic links.
+
+## 9. Tool Safety
 
 ### Web Fetch
 
-For every initial URL and redirect target:
-
-- allow only `http` and `https`;
+- only `http` and `https`;
 - reject embedded credentials;
-- resolve the hostname;
-- reject loopback, private, link-local, multicast, reserved, unspecified, and non-global addresses;
-- disable automatic redirects and follow at most three redirects manually;
-- reject redirects without a valid `Location`;
-- accept only textual response content;
-- enforce a response byte limit while streaming;
-- decode and truncate to `max_fetch_chars`.
-
-DNS resolution failures reject the URL. This does not fully eliminate DNS rebinding, but validating each target and connecting immediately substantially narrows the prototype risk.
+- resolve hostnames and reject non-global IP addresses;
+- disable automatic redirects;
+- validate each redirect target;
+- follow at most three redirects;
+- accept textual content only;
+- enforce response and decoded text limits.
 
 ### Calculator
 
-Reject:
+- maximum expression length: 200 characters;
+- maximum AST nodes: 100;
+- maximum nesting depth: 20;
+- maximum exponent magnitude: 100;
+- reject non-finite or absolute values above `1e100`.
 
-- expressions longer than 200 characters;
-- ASTs deeper than 20 levels or larger than 100 nodes;
-- non-finite numbers;
-- exponent magnitude above 100;
-- intermediate or final absolute values above `1e100`.
+## 10. Testing
 
-Supported operators remain addition, subtraction, multiplication, division, exponentiation, and unary signs.
+Tests cover:
 
-## 9. Persistence and Events
+- cancellation between workflow stages;
+- timeout detection;
+- token estimate accumulation;
+- research multi-query, deduplication, fetch, citation check, and supplemental
+  search limit;
+- all five ReAct tools and disallowed tool selection;
+- private DNS results and unsafe redirects;
+- pathological calculator inputs;
+- artifact path traversal, overwrite, count, and size limits;
+- JSON and CSV serialization;
+- cross-task artifact access rejection;
+- archive contents;
+- artifact list and download endpoints;
+- existing replay and API compatibility.
 
-Reuse the existing tables and add only repository operations where possible.
+Before completion:
 
-Persist:
+- the full Pytest suite passes;
+- `python -m compileall -q app tests` passes;
+- FastAPI application import passes.
 
-- cumulative task token estimate;
-- budget exhaustion reason in `error_summary`;
-- tool calls and evidence as today;
-- citation and critic events;
-- cancellation and terminal task events.
+## 11. Acceptance Criteria
 
-Add event types:
+The implementation is complete when:
 
-- `budget_updated`;
-- `budget_exhausted`;
-- `react_decision`;
-- `research_supplemental_started`.
-
-Replay remains backward compatible because event payloads are additive.
-
-## 10. Error Handling
-
-- Cancellation is not converted to failure.
-- Known budget exhaustion is handled separately from unexpected exceptions.
-- Tool validation failures are persisted as failed tool calls.
-- One failed Supervisor worker does not fail unrelated workers.
-- Research network failures preserve successful evidence and return degraded output when possible.
-- Background task exceptions must be observed and must not produce unhandled-task warnings.
-
-## 11. Testing
-
-Tests must cover:
-
-- cancellation after an in-flight LLM or tool call;
-- cancellation checks in Supervisor, DAG, and Swarm loops;
-- background task tracking and cleanup;
-- token accumulation across structured-output repair calls;
-- timeout, step, tool, and token exhaustion;
-- degraded completion with existing evidence;
-- research multi-query, deduplication, fetch, citation check, critic, and supplemental search limits;
-- ReAct selection of all five functional tools;
-- disallowed or unavailable ReAct tools;
-- private DNS results and unsafe redirects in `web_fetch`;
-- oversized, deeply nested, and excessive exponent calculator expressions;
-- replay and existing API compatibility.
-
-The full test suite, Python compilation, and FastAPI import check must pass before completion.
-
-## 12. Acceptance Criteria
-
-The change is complete when:
-
-- cancelling a running task prevents additional workflow layers and final result persistence;
-- task token estimates become non-zero after real or mocked LLM calls;
-- every configured runtime limit has an enforced code path and test;
-- research uses multiple searches, safe fetches, citation checking, and at most one supplemental pass;
-- ReAct can invoke every registered functional tool through structured decisions;
-- unsafe fetch targets and pathological calculator inputs are rejected;
-- replay continues to expose task, events, agents, tool calls, evidence, and result;
-- all automated verification commands pass.
+- cancellation prevents additional workflow stages and final persistence;
+- token estimates are stored for LLM-backed tasks;
+- research performs multiple searches and uses safe fetched evidence;
+- ReAct can select all existing functional tools;
+- unsafe fetch and calculator inputs are rejected;
+- a user can request a report or CSV, see it in the task artifact list, and
+  download it;
+- generated files cannot escape their task directory or overwrite existing
+  files;
+- existing workflows, sessions, replay, Markdown output, and UI remain
+  functional.
