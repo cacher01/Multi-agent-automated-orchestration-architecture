@@ -2,73 +2,73 @@
 
 ## Goal
 
-Make the project easier to demonstrate and easier to understand without changing the core orchestration behavior.
+Improve the project's presentation quality while keeping the application behavior stable.
 
-This pass is intentionally lightweight. It should improve first impression, documentation clarity, and basic repository hygiene while avoiding large structural refactors.
+This pass is not a refactor sprint. The goal is to make the current project easier to show, easier to start, and easier to understand from the repository entry point.
 
 ## Scope
 
 In scope:
 
-- Improve the existing static UI under `app/static/`.
-- Rewrite the root `README.md` as a clear project entry point.
-- Adjust `.gitignore` so project documentation can be versioned.
-- Fix current low-risk lint issues reported by `ruff`.
-- Keep all current APIs and backend behavior compatible.
+- Polish the existing `/ui` page so it is clearer during demos.
+- Rewrite `README.md` in a standard GitHub project style.
+- Fix only small repository hygiene issues that affect presentation or basic quality checks.
+- Keep all current backend APIs and orchestration behavior unchanged.
 
 Out of scope:
 
-- Splitting `Orchestrator` into workflow strategy modules.
-- Introducing React, Vite, or another frontend build system.
-- Adding authentication or multi-user ownership.
-- Changing database technology.
-- Redesigning the task/event schema.
+- Splitting or redesigning the orchestrator.
+- Reorganizing backend packages.
+- Introducing a frontend framework or build step.
+- Adding authentication, deployment automation, or production multi-user features.
+- Changing workflow semantics, database schema, or tool behavior.
 
-## Frontend Design
+## UI Presentation
 
-Keep the current no-build static frontend. The UI should look less like a raw debug console and more like a focused orchestration workspace.
+The current UI should remain a static HTML/CSS/JS page. The update should focus on presentation and readability:
 
-The page should make these areas clear:
+- Make the project identity clearer at the top of the page.
+- Make task input, examples, status, result, sources, artifacts, execution graph, and history easier to scan.
+- Improve labels and empty states so the page works well in a live demo before and after a task runs.
+- Keep existing element ids and API calls stable.
 
-- Task submission and example prompts.
-- Current task status, workflow, and task id.
-- Final answer, citations, and generated artifacts.
-- Execution graph and node inspector.
-- Task history and session task list.
+No desktop-specific redesign is required. The page only needs to remain usable on common browser sizes.
 
-The visual update should stay conservative:
+## README Style
 
-- Use clearer section titles and empty states.
-- Improve spacing, badges, and status colors.
-- Keep the two-column layout on desktop and responsive single-column layout on small screens.
-- Preserve the existing event stream and replay behavior.
+Rewrite the README to match common GitHub project conventions. It should be concise and practical, not a long design document.
 
-## README Design
+Recommended structure:
 
-The README should be rewritten for a new reader. It should answer, in order:
+1. Project name and one-sentence summary.
+2. What the project does.
+3. Key features.
+4. Screens/UI entry point.
+5. Quick start.
+6. Environment variables.
+7. Example tasks.
+8. Project structure.
+9. Tests.
+10. Current limitations.
 
-1. What the project is.
-2. What it can do.
-3. How to run it.
-4. How to try a useful demo task.
-5. How the architecture is organized.
-6. What workflows and tools exist.
-7. What tests verify.
-8. What safety boundaries and current limits exist.
-9. What should be improved next.
+The README should primarily explain:
 
-The README should avoid long undifferentiated feature lists. It should use short sections, tables where useful, and explicit commands.
+- The project content.
+- Typical applications.
+- How to start and verify it.
+- What capabilities are currently implemented.
 
-## Engineering Cleanup
+It should avoid overclaiming production readiness.
 
-This pass should fix only low-risk hygiene issues:
+## Minimal Code Hygiene
 
-- Remove unused imports.
-- Remove unused local variables that `ruff` reports.
-- Keep public behavior unchanged.
-- Keep tests passing.
+Only make low-risk cleanup needed for a clean presentation:
 
-No code movement is planned in this pass. The large `Orchestrator` file should be documented as a known next refactor, not fixed here.
+- Fix current `ruff` unused import / unused variable issues.
+- Keep `.env`, runtime data, caches, and artifacts ignored.
+- Keep Markdown documentation trackable in Git.
+
+Do not move core code in this pass. Larger structural work can be planned separately after the project presentation is improved.
 
 ## Verification
 
@@ -81,13 +81,11 @@ conda run -n pytorch ruff check app tests
 
 Success criteria:
 
-- Existing tests pass.
-- Ruff reports no issues for `app` and `tests`.
-- README is readable as a standalone project overview.
-- UI still works through `/ui` without new dependencies.
+- Tests pass.
+- Ruff passes.
+- `/ui` still works with the existing API.
+- README is short, clear, and useful as the repository landing page.
 
-## Risks
+## Notes
 
-- UI changes can accidentally break selectors used by `app.js`; keep element ids stable.
-- README can overclaim production readiness; explicitly describe current limits.
-- `.gitignore` changes may expose documentation that was previously ignored; keep secrets and runtime data ignored.
+The orchestrator is intentionally left unchanged in this pass. Its structure can be addressed later as a separate engineering task.
