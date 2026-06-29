@@ -16,3 +16,11 @@ def test_ui_loads_task_artifact_download_links():
     assert "fetchArtifacts" in script
     assert "/artifacts" in script
     assert 'id="artifacts"' in markup
+
+
+def test_ui_surfaces_failed_or_interrupted_tasks():
+    script = Path("app/static/app.js").read_text(encoding="utf-8")
+
+    assert "refreshTaskOutcome" in script
+    assert "showTaskFailure" in script
+    assert "Task failed before producing a final result." in script

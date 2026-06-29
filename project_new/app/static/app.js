@@ -368,11 +368,48 @@
 
   async function fetchResult(taskId) {
     if (resultFetched) return;
-    resultFetched = true;
     const response = await fetch(`/tasks/${encodeURIComponent(taskId)}/result`);
     if (!response.ok) throw new Error(`Result request failed: ${response.status}`);
-    renderResult(await response.json());
+    const result = await response.json();
+    resultFetched = true;
+    renderResult(result);
     await fetchArtifacts(taskId);
+  }
+
+  async function refreshTaskOutcome(taskId) {
+    const response = await fetch(`/tasks/${encodeURIComponent(taskId)}`);
+    if (!response.ok) throw new Error(`Task status request failed: ${response.status}`);
+    const task = await response.json();
+    const status = String(task.status || "").toLowerCase();
+    if (task.status) setStatus(task.status);
+    if (status === "completed" || status === "degraded") {
+      await fetchResult(taskId);
+    } else if (status === "failed") {
+      await showTaskFailure(taskId, task);
+    }
+  }
+
+  async function showTaskFailure(taskId, detail) {
+    let replay = null;
+    try {
+      const response = await fetch(`/tasks/${encodeURIComponent(taskId)}/replay`);
+      if (response.ok) replay = await response.json();
+    } catch (_) {
+      replay = null;
+    }
+    const events = replay && Array.isArray(replay.events) ? replay.events : [];
+    const lastFailure = [...events].reverse().find((event) => event.type === "task_failed");
+    const message =
+      detail.error_summary ||
+      (detail.payload && detail.payload.error) ||
+      (lastFailure && lastFailure.payload && lastFailure.payload.error) ||
+      "Task failed before producing a final result.";
+    answerEl.textContent = message;
+    answerEl.classList.remove("empty");
+    citationsEl.innerHTML = "<li>No sources provided.</li>";
+    citationsEl.classList.add("empty");
+    confidenceEl.textContent = "Confidence --";
+    detailsEl.textContent = pretty(replay || detail);
   }
 
   async function fetchArtifacts(taskId) {
@@ -404,7 +441,12 @@
       if (source) source.close();
       cancelButton.disabled = true;
       loadHistory();
-      if (!["cancelled", "failed"].includes(String(status).toLowerCase())) {
+      if (String(status).toLowerCase() === "failed") {
+        showTaskFailure(activeTaskId, payload).catch((error) => addEvent("result_error", error.message));
+      } else if (String(status).toLowerCase() === "cancelled") {
+        answerEl.textContent = "Task was cancelled before producing a final result.";
+        answerEl.classList.remove("empty");
+      } else {
         fetchResult(activeTaskId).catch((error) => addEvent("result_error", error.message));
       }
     }
@@ -415,7 +457,11 @@
     source.onopen = () => setStatus("Running");
     source.onmessage = (event) => handleStreamEvent(event, "message");
     source.onerror = () => {
-      if (!resultFetched) setStatus("Stream error");
+      if (activeTaskId && !resultFetched) {
+        refreshTaskOutcome(activeTaskId).catch(() => setStatus("Stream error"));
+      } else if (!resultFetched) {
+        setStatus("Stream error");
+      }
     };
     ["event", "completed", "degraded", "failed", "cancelled"].forEach((name) => {
       source.addEventListener(name, (event) => handleStreamEvent(event, name));
