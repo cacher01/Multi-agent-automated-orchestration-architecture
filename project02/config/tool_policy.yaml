@@ -1,0 +1,25 @@
+web_search:
+  provider: auto
+
+filesystem:
+  workspace_roots:
+    - "."
+  extra_allowed_directories: []
+  denied_paths:
+    - ".env"
+    - "**/*.pem"
+    - "**/*.key"
+
+code_executor:
+  timeout_seconds: 120
+  output_max_chars: 20000
+  blacklist:
+    exact_commands: []
+    patterns:
+      - "rm -rf"
+      - "Remove-Item .* -Recurse"
+      - "git reset --hard"
+      - "git clean -fd"
+
+api_caller:
+  allowed_domains: []
