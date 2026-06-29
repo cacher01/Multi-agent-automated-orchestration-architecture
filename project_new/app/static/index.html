@@ -3,14 +3,14 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Orchestration Console</title>
+    <title>Orchestration Workspace</title>
     <link rel="stylesheet" href="/static/styles.css">
   </head>
   <body>
     <header class="app-header">
       <div class="brand">
         <span class="brand-mark">O</span>
-        <div><strong>Orchestration Console</strong><small>Multi-agent runtime</small></div>
+        <div><strong>Orchestration Workspace</strong><small>Dynamic multi-agent runtime</small></div>
       </div>
       <div class="run-status">
         <span id="taskId">No active task</span>
@@ -22,7 +22,7 @@
       <section class="primary-column">
         <form id="taskForm" class="task-composer">
           <div class="section-title">
-            <div><span>Task</span><h1>What should the system handle?</h1></div>
+            <div><span>Task Input</span><h1>Describe a task and let the orchestrator route it</h1></div>
             <span id="workflowLabel" class="workflow-label">Auto routing</span>
           </div>
           <div class="session-bar">
@@ -36,11 +36,12 @@
           <textarea id="questionInput" name="input" rows="6" placeholder="输入任务，例如：调研特斯拉公司并给出引用" required></textarea>
           <div class="composer-footer">
             <div class="prompt-list">
-              <button type="button" data-prompt="查询北京天气和当地时间">天气</button>
-              <button type="button" data-prompt="调研特斯拉公司，概括业务、财务、竞争格局和近期动态，并给出引用">调研</button>
-              <button type="button" data-prompt="分析多智能体框架的发展趋势、代表项目、风险和适用场景">分析</button>
-              <button type="button" data-prompt="先调研特斯拉公司基本情况，再分析其竞争格局，最后生成风险报告">DAG</button>
+              <button type="button" data-prompt="查询北京天气和当地时间">Weather + Time</button>
+              <button type="button" data-prompt="调研特斯拉公司，概括业务、财务、竞争格局和近期动态，并给出引用">Research Report</button>
+              <button type="button" data-prompt="分析多智能体框架的发展趋势、代表项目、风险和适用场景">Multi-angle Analysis</button>
+              <button type="button" data-prompt="先调研特斯拉公司基本情况，再分析其竞争格局，最后生成风险报告">DAG Workflow</button>
             </div>
+            <p class="composer-hint">Routes tasks across direct answers, research, ReAct tools, supervisor analysis, DAG execution, and experimental swarm runs.</p>
             <div class="actions">
               <button id="cancelButton" class="secondary-button" type="button" disabled>Cancel</button>
               <button id="submitButton" class="primary-button" type="submit">Run task</button>
@@ -53,7 +54,7 @@
             <div><span>Result</span><h2 id="stageTitle">Awaiting task</h2></div>
             <span id="confidenceLabel">Confidence --</span>
           </div>
-          <article id="finalAnswer" class="answer empty">任务结果会显示在这里。</article>
+          <article id="finalAnswer" class="answer empty">Run a task to see the final answer, citations, and generated artifacts.</article>
           <section class="sources">
             <h3>Sources</h3>
             <ul id="citations" class="citations empty"><li>No sources yet.</li></ul>
@@ -72,7 +73,7 @@
       <aside class="runtime-column">
         <section class="runtime-panel tree-panel">
           <div class="panel-heading">
-            <div><span>Execution tree</span><small>Nodes extend downward as the task runs</small></div>
+            <div><span>Execution Graph</span><small>Workflow, agent, tool, and result events</small></div>
             <span id="eventCount">0 events</span>
           </div>
           <div id="treeEmpty" class="empty-state">Run a task or replay history.</div>
@@ -81,14 +82,14 @@
 
         <section class="runtime-panel inspector-panel">
           <div class="panel-heading">
-            <div><span>Node details</span><small>Click any tree node</small></div>
+            <div><span>Node Details</span><small>Click any graph node or event</small></div>
           </div>
           <pre id="selectedEvent">No node selected.</pre>
         </section>
 
         <section class="runtime-panel history-panel">
           <div class="panel-heading">
-            <div><span>Task history</span><small>Persisted tasks and replay</small></div>
+            <div><span>Task History</span><small>Persisted tasks and replay</small></div>
             <button id="refreshHistory" type="button">Refresh</button>
           </div>
           <div id="taskHistory" class="task-history"></div>
@@ -96,7 +97,7 @@
 
         <section class="runtime-panel session-panel">
           <div class="panel-heading">
-            <div><span>Session tasks</span><small>Tasks sharing bounded context</small></div>
+            <div><span>Session Tasks</span><small>Tasks sharing bounded context</small></div>
           </div>
           <div id="sessionTasks" class="task-history">
             <div class="empty-state">Select a session.</div>

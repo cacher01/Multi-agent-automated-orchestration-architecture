@@ -1,7 +1,5 @@
 import asyncio
 
-import pytest
-
 from app.core.config import Settings
 from app.db.database import init_database
 from app.db.repositories import Repository

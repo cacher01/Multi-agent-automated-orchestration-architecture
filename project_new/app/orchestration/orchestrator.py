@@ -156,7 +156,6 @@ class Orchestrator:
 
     async def _run_direct(self, task_id: str, routing: RoutingDecision) -> None:
         self._checkpoint(task_id)
-        task = self.repository.get_task(task_id)
         user_input = self._task_context(task_id)
         research_context, web_used = await self._maybe_research(
             task_id, None, routing.requires_web
@@ -171,7 +170,6 @@ class Orchestrator:
 
     async def _run_plan_execute(self, task_id: str, routing: RoutingDecision) -> None:
         self._checkpoint(task_id)
-        task = self.repository.get_task(task_id)
         user_input = self._task_context(task_id)
         decomposition = await self._decompose(task_id)
         self.event_service.emit(
@@ -198,7 +196,6 @@ class Orchestrator:
 
     async def _run_research(self, task_id: str, routing: RoutingDecision) -> None:
         self._checkpoint(task_id)
-        task = self.repository.get_task(task_id)
         user_input = self._task_context(task_id)
         research_context, web_used = await self._research_context(task_id, None)
         if web_used:
@@ -395,7 +392,6 @@ class Orchestrator:
 
     async def _run_supervisor(self, task_id: str, routing: RoutingDecision) -> None:
         self._checkpoint(task_id)
-        task = self.repository.get_task(task_id)
         user_input = self._task_context(task_id)
         decomposition = await self._decompose(task_id)
         self.event_service.emit(
@@ -545,7 +541,6 @@ class Orchestrator:
 
     async def _run_dag(self, task_id: str, routing: RoutingDecision) -> None:
         self._checkpoint(task_id)
-        task = self.repository.get_task(task_id)
         user_input = self._task_context(task_id)
         decomposition = await self._decompose(task_id)
         self.event_service.emit(
@@ -719,7 +714,6 @@ class Orchestrator:
 
     async def _run_swarm(self, task_id: str, routing: RoutingDecision) -> None:
         self._checkpoint(task_id)
-        task = self.repository.get_task(task_id)
         user_input = self._task_context(task_id)
         decomposition = await self._decompose(task_id)
         self.event_service.emit(
