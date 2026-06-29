@@ -3,6 +3,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .test_tmp/
+.artifact*_tmp*/
 artifacts/
 *.err
 *.out
