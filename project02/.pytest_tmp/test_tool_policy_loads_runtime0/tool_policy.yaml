@@ -1,0 +1,20 @@
+web_search:
+  provider: tavily
+filesystem:
+  workspace_roots:
+    - "."
+  extra_allowed_directories:
+    - "D:/data"
+  denied_paths:
+    - ".env"
+code_executor:
+  timeout_seconds: 30
+  output_max_chars: 1000
+  blacklist:
+    exact_commands:
+      - "danger"
+    patterns:
+      - "rm -rf"
+api_caller:
+  allowed_domains:
+    - "api.example.com"

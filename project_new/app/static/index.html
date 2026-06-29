@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Orchestration Console</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand">
+        <span class="brand-mark">O</span>
+        <div><strong>Orchestration Console</strong><small>Multi-agent runtime</small></div>
+      </div>
+      <div class="run-status">
+        <span id="taskId">No active task</span>
+        <strong id="taskStatus" data-state="idle">Idle</strong>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="primary-column">
+        <form id="taskForm" class="task-composer">
+          <div class="section-title">
+            <div><span>Task</span><h1>What should the system handle?</h1></div>
+            <span id="workflowLabel" class="workflow-label">Auto routing</span>
+          </div>
+          <div class="session-bar">
+            <label for="sessionSelect">Session</label>
+            <select id="sessionSelect">
+              <option value="">Standalone task</option>
+            </select>
+            <button id="newSessionButton" type="button">New session</button>
+          </div>
+          <label class="sr-only" for="questionInput">Task</label>
+          <textarea id="questionInput" name="input" rows="6" placeholder="输入任务，例如：调研特斯拉公司并给出引用" required></textarea>
+          <div class="composer-footer">
+            <div class="prompt-list">
+              <button type="button" data-prompt="查询北京天气和当地时间">天气</button>
+              <button type="button" data-prompt="调研特斯拉公司，概括业务、财务、竞争格局和近期动态，并给出引用">调研</button>
+              <button type="button" data-prompt="分析多智能体框架的发展趋势、代表项目、风险和适用场景">分析</button>
+              <button type="button" data-prompt="先调研特斯拉公司基本情况，再分析其竞争格局，最后生成风险报告">DAG</button>
+            </div>
+            <div class="actions">
+              <button id="cancelButton" class="secondary-button" type="button" disabled>Cancel</button>
+              <button id="submitButton" class="primary-button" type="submit">Run task</button>
+            </div>
+          </div>
+        </form>
+
+        <section class="result-panel">
+          <div class="section-title result-title">
+            <div><span>Result</span><h2 id="stageTitle">Awaiting task</h2></div>
+            <span id="confidenceLabel">Confidence --</span>
+          </div>
+          <article id="finalAnswer" class="answer empty">任务结果会显示在这里。</article>
+          <section class="sources">
+            <h3>Sources</h3>
+            <ul id="citations" class="citations empty"><li>No sources yet.</li></ul>
+          </section>
+          <section class="sources">
+            <h3>Artifacts</h3>
+            <ul id="artifacts" class="citations empty"><li>No generated files.</li></ul>
+          </section>
+          <details class="raw-details">
+            <summary>Raw result</summary>
+            <pre id="executionDetails">{}</pre>
+          </details>
+        </section>
+      </section>
+
+      <aside class="runtime-column">
+        <section class="runtime-panel tree-panel">
+          <div class="panel-heading">
+            <div><span>Execution tree</span><small>Nodes extend downward as the task runs</small></div>
+            <span id="eventCount">0 events</span>
+          </div>
+          <div id="treeEmpty" class="empty-state">Run a task or replay history.</div>
+          <div id="executionTree" class="execution-tree" aria-live="polite"></div>
+        </section>
+
+        <section class="runtime-panel inspector-panel">
+          <div class="panel-heading">
+            <div><span>Node details</span><small>Click any tree node</small></div>
+          </div>
+          <pre id="selectedEvent">No node selected.</pre>
+        </section>
+
+        <section class="runtime-panel history-panel">
+          <div class="panel-heading">
+            <div><span>Task history</span><small>Persisted tasks and replay</small></div>
+            <button id="refreshHistory" type="button">Refresh</button>
+          </div>
+          <div id="taskHistory" class="task-history"></div>
+        </section>
+
+        <section class="runtime-panel session-panel">
+          <div class="panel-heading">
+            <div><span>Session tasks</span><small>Tasks sharing bounded context</small></div>
+          </div>
+          <div id="sessionTasks" class="task-history">
+            <div class="empty-state">Select a session.</div>
+          </div>
+        </section>
+
+        <details class="runtime-panel event-panel">
+          <summary>Raw event timeline</summary>
+          <ol id="eventStream" class="event-stream"></ol>
+          <div id="eventPath" hidden></div>
+        </details>
+      </aside>
+    </main>
+
+    <span id="agentCount" hidden>0</span>
+    <span id="toolCount" hidden>0</span>
+    <button id="collapseEvents" hidden type="button"></button>
+    <section id="graphPanel" hidden></section>
+    <section id="timelinePanel" hidden></section>
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>
