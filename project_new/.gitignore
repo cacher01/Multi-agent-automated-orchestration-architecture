@@ -9,3 +9,8 @@ artifacts/
 *.out
 .env
 .venv
+.claude/
+*.md
+docs/
+tests/
+orchestration.db
