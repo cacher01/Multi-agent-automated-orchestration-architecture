@@ -4,9 +4,7 @@ __pycache__/
 .ruff_cache/
 .test_tmp/
 artifacts/
-docs/
 *.err
 *.out
-*.md
 .env
 .venv
