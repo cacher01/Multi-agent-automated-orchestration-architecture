@@ -28,7 +28,7 @@
 
 ## 前置要求
 
-- **Python ≥ 3.10**（项目使用了 `list[X]` / `tuple[X, ...]` 等新式类型语法）
+- **Python ≥ 3.10**
 - 推荐使用 Conda 或 venv 虚拟环境
 - 如需真实 LLM 调用，需要 DeepSeek API Key（或任意 OpenAI 兼容服务）
 - 如需网页搜索功能，需要 [Tavily](https://tavily.com) API Key
