@@ -1,8 +1,0 @@
-.env
-__pycache__/
-docs/
-.mypy_cache/
-.pytest_cache/
-.ruff_cache/
-.log/
-*.log

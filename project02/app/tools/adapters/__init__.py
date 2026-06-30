@@ -1,2 +1,0 @@
-"""Concrete tool adapters."""
-

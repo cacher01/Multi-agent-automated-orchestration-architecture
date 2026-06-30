@@ -1,9 +1,0 @@
-Metadata-Version: 2.4
-Name: multi-agent-orchestration-framework
-Version: 0.1.0
-Summary: FastAPI MVP for a multi-agent orchestration framework
-Requires-Python: >=3.10
-Requires-Dist: fastapi
-Requires-Dist: httpx
-Requires-Dist: pydantic
-Requires-Dist: uvicorn
