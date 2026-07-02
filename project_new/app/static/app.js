@@ -34,7 +34,7 @@
   const terminalStatuses = new Set(["completed", "degraded", "failed", "cancelled"]);
 
   function setStatus(value) {
-    const status = value || "Unknown";
+    const status = value || "未知";
     statusEl.textContent = status;
     statusEl.dataset.state = status.toLowerCase();
   }
@@ -49,29 +49,29 @@
     graphEdges = new Map();
     agentCount = 0;
     toolCount = 0;
-    setStatus("Submitting");
-    taskIdEl.textContent = "Creating task";
-    workflowEl.textContent = "Pending";
-    stageTitleEl.textContent = question.length > 54 ? `${question.slice(0, 54)}...` : question;
+    setStatus("提交中");
+    taskIdEl.textContent = "创建任务中";
+    workflowEl.textContent = "等待";
+    if (stageTitleEl) stageTitleEl.textContent = question.length > 54 ? `${question.slice(0, 54)}...` : question;
     eventCountEl.textContent = "0";
-    agentCountEl.textContent = "0";
-    toolCountEl.textContent = "0";
+    if (agentCountEl) agentCountEl.textContent = "0";
+    if (toolCountEl) toolCountEl.textContent = "0";
     eventsEl.innerHTML = "";
     pathEl.innerHTML = "";
     graphEl.innerHTML = "";
     graphEmptyEl.hidden = false;
-    selectedEventEl.textContent = "Select a graph node or event.";
+    selectedEventEl.textContent = "点击节点查看详情。";
     cancelButton.disabled = true;
-    answerEl.textContent = "Task is running...";
+    answerEl.textContent = "任务运行中…";
     answerEl.classList.add("empty");
-    citationsEl.innerHTML = "<li>No sources yet.</li>";
+    citationsEl.innerHTML = "<li>暂无来源。</li>";
     citationsEl.classList.add("empty");
     if (artifactsEl) {
-      artifactsEl.innerHTML = "<li>No generated files.</li>";
+      artifactsEl.innerHTML = "<li>暂无产物。</li>";
       artifactsEl.classList.add("empty");
     }
     detailsEl.textContent = "{}";
-    confidenceEl.textContent = "Confidence --";
+    confidenceEl.textContent = "置信度 --";
   }
 
   function parseJson(value) {
@@ -108,11 +108,11 @@
     }
     if (type === "agent_spawned") {
       agentCount += 1;
-      agentCountEl.textContent = String(agentCount);
+      if (agentCountEl) agentCountEl.textContent = String(agentCount);
     }
     if (type === "tool_call_requested") {
       toolCount += 1;
-      toolCountEl.textContent = String(toolCount);
+      if (toolCountEl) toolCountEl.textContent = String(toolCount);
     }
   }
 
@@ -197,21 +197,43 @@
       const depth = Math.min(levels.get(node.node_id) || 0, 4);
       const parentEdge = edges.find((edge) => edge.target === node.node_id);
       const relation = parentEdge ? parentEdge.edge_type : "root";
+      const icon = nodeIcon(type);
+      const statusLabel = nodeStatusLabel(status);
       return `
-        <button class="tree-node" type="button" style="--depth:${depth}" data-node-id="${escapeHtml(node.node_id)}" data-type="${type}" data-status="${status}">
-          <span class="node-dot"></span>
-          <span class="node-copy">
-            <strong>${label}</strong>
-            <small>${type} · ${escapeHtml(relation)}</small>
-          </span>
-          <span class="node-status">${status}</span>
-        </button>`;
+        <div class="tree-row" style="--depth:${depth}">
+          <div class="tree-connector ${depth > 0 ? "has-parent" : ""}">
+            <span class="tree-dot type-${type} status-${status}">${icon}</span>
+          </div>
+          <button class="tree-node" type="button" data-node-id="${escapeHtml(node.node_id)}" data-type="${type}" data-status="${status}">
+            <span class="node-copy">
+              <strong>${label}</strong>
+              <small>${type} · ${escapeHtml(relation)}</small>
+            </span>
+            <span class="node-badge status-${status}">${statusLabel}</span>
+          </button>
+        </div>`;
     }).join("");
     graphEl.querySelectorAll(".tree-node").forEach((element) => {
       element.addEventListener("click", () => {
         selectInspector(graphNodes.get(element.dataset.nodeId) || {}, element);
       });
     });
+  }
+
+  function nodeIcon(type) {
+    if (type === "workflow") return "⚙";
+    if (type === "agent") return "▸";
+    if (type === "tool") return "◆";
+    if (type === "result") return "✓";
+    return "●";
+  }
+
+  function nodeStatusLabel(status) {
+    if (status === "completed") return "完成";
+    if (status === "degraded") return "降级";
+    if (status === "failed" || status === "blocked") return "失败";
+    if (status === "running") return "运行中";
+    return "等待";
   }
 
   function calculateLevels(nodes, edges) {
@@ -235,7 +257,7 @@
     citationsEl.innerHTML = "";
     citationsEl.classList.toggle("empty", !citations.length);
     if (!citations.length) {
-      citationsEl.innerHTML = "<li>No sources provided.</li>";
+      citationsEl.innerHTML = "<li>未提供引用来源。</li>";
       return;
     }
     citations.forEach((citation, index) => {
@@ -257,11 +279,11 @@
     detailsEl.textContent = pretty(result);
     confidenceEl.textContent = typeof result.confidence === "number"
       ? `Confidence ${Math.round(result.confidence * 100)}%`
-      : "Confidence --";
+      : "置信度 --";
   }
 
   function renderMarkdown(text) {
-    if (!text) return "No answer returned.";
+    if (!text) return "未返回答案。";
     const lines = text.split(/\r?\n/);
     let html = "";
     let unorderedOpen = false;
@@ -403,7 +425,7 @@
       detail.error_summary ||
       (detail.payload && detail.payload.error) ||
       (lastFailure && lastFailure.payload && lastFailure.payload.error) ||
-      "Task failed before producing a final result.";
+      "任务在生成结果前失败。";
     answerEl.textContent = message;
     answerEl.classList.remove("empty");
     citationsEl.innerHTML = "<li>No sources provided.</li>";
@@ -444,7 +466,7 @@
       if (String(status).toLowerCase() === "failed") {
         showTaskFailure(activeTaskId, payload).catch((error) => addEvent("result_error", error.message));
       } else if (String(status).toLowerCase() === "cancelled") {
-        answerEl.textContent = "Task was cancelled before producing a final result.";
+        answerEl.textContent = "任务已取消，未生成最终结果。";
         answerEl.classList.remove("empty");
       } else {
         fetchResult(activeTaskId).catch((error) => addEvent("result_error", error.message));
@@ -454,13 +476,13 @@
 
   function connectStream(taskId) {
     source = new EventSource(`/tasks/${encodeURIComponent(taskId)}/stream`);
-    source.onopen = () => setStatus("Running");
+    source.onopen = () => setStatus("运行中");
     source.onmessage = (event) => handleStreamEvent(event, "message");
     source.onerror = () => {
       if (activeTaskId && !resultFetched) {
-        refreshTaskOutcome(activeTaskId).catch(() => setStatus("Stream error"));
+        refreshTaskOutcome(activeTaskId).catch(() => setStatus("连接错误"));
       } else if (!resultFetched) {
-        setStatus("Stream error");
+        setStatus("连接错误");
       }
     };
     ["event", "completed", "degraded", "failed", "cancelled"].forEach((name) => {
@@ -488,13 +510,13 @@
       activeTaskId = payload.task_id || payload.id || payload.taskId;
       if (!activeTaskId) throw new Error("Task response did not include a task_id.");
       taskIdEl.textContent = activeTaskId;
-      setStatus(payload.status || "Queued");
+      setStatus(payload.status || "排队中");
       cancelButton.disabled = false;
       addEvent("task_created", payload);
       connectStream(activeTaskId);
       if (activeSessionId) loadSessionTasks(activeSessionId);
     } catch (error) {
-      setStatus("Error");
+      setStatus("错误");
       addEvent("error", error.message);
     } finally {
       submitButton.disabled = false;
@@ -515,7 +537,7 @@
     }
   });
 
-  document.querySelectorAll(".prompt-button").forEach((button) => {
+  document.querySelectorAll(".prompt-list button[data-prompt]").forEach((button) => {
     button.addEventListener("click", () => {
       input.value = button.dataset.prompt || "";
       input.focus();
@@ -524,13 +546,13 @@
 
   async function loadHistory() {
     const historyEl = $("taskHistory");
-    historyEl.innerHTML = '<div class="empty-state">Loading history...</div>';
+    historyEl.innerHTML = '<div class="empty-state">加载中…</div>';
     try {
       const response = await fetch("/tasks?limit=50");
       if (!response.ok) throw new Error(`History request failed: ${response.status}`);
       const tasks = await response.json();
       if (!tasks.length) {
-        historyEl.innerHTML = '<div class="empty-state">No saved tasks.</div>';
+        historyEl.innerHTML = '<div class="empty-state">暂无保存的任务。</div>';
         return;
       }
       historyEl.innerHTML = tasks.map((task) => `
@@ -564,12 +586,12 @@
   }
 
   async function createSession() {
-    const title = window.prompt("Session title", "New long task");
+    const title = window.prompt("会话名称", "新会话");
     if (title === null) return;
     const response = await fetch("/sessions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: title.trim() || "New long task" }),
+      body: JSON.stringify({ title: title.trim() || "新会话" }),
     });
     if (!response.ok) return;
     const session = await response.json();
@@ -582,17 +604,17 @@
   async function loadSessionTasks(sessionId) {
     const container = $("sessionTasks");
     if (!sessionId) {
-      container.innerHTML = '<div class="empty-state">Select a session.</div>';
+      container.innerHTML = '<div class="empty-state">请选择一个会话。</div>';
       return;
     }
     const response = await fetch(`/sessions/${encodeURIComponent(sessionId)}`);
     if (!response.ok) {
-      container.innerHTML = '<div class="empty-state">Session unavailable.</div>';
+      container.innerHTML = '<div class="empty-state">会话不可用。</div>';
       return;
     }
     const payload = await response.json();
     if (!payload.tasks.length) {
-      container.innerHTML = '<div class="empty-state">No tasks in this session.</div>';
+      container.innerHTML = '<div class="empty-state">此会话暂无任务。</div>';
       return;
     }
     container.innerHTML = payload.tasks.map((task) => `
@@ -625,7 +647,7 @@
     $("sessionSelect").value = activeSessionId;
     loadSessionTasks(activeSessionId);
     setStatus(replay.task.status);
-    workflowEl.textContent = replay.task.workflow || "Pending";
+    workflowEl.textContent = replay.task.workflow || "等待";
     cancelButton.disabled = true;
     replay.events.forEach((event) => addEvent("replay", event));
     if (replay.result) renderResult(replay.result);

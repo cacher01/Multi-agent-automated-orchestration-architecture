@@ -10,10 +10,10 @@
     <header class="app-header">
       <div class="brand">
         <span class="brand-mark">O</span>
-        <div><strong>Orchestration Workspace</strong><small>Dynamic multi-agent runtime</small></div>
+        <strong>Orchestration Workspace</strong>
       </div>
       <div class="run-status">
-        <span id="taskId">No active task</span>
+        <span id="taskId" class="task-id-label">就绪</span>
         <strong id="taskStatus" data-state="idle">Idle</strong>
       </div>
     </header>
@@ -22,49 +22,48 @@
       <section class="primary-column">
         <form id="taskForm" class="task-composer">
           <div class="section-title">
-            <div><span>Task Input</span><h1>Describe a task and let the orchestrator route it</h1></div>
-            <span id="workflowLabel" class="workflow-label">Auto routing</span>
+            <div><span>任务输入</span></div>
+            <span id="workflowLabel" class="workflow-label">自动路由</span>
           </div>
           <div class="session-bar">
-            <label for="sessionSelect">Session</label>
+            <label for="sessionSelect">会话</label>
             <select id="sessionSelect">
-              <option value="">Standalone task</option>
+              <option value="">独立任务</option>
             </select>
-            <button id="newSessionButton" type="button">New session</button>
+            <button id="newSessionButton" type="button" class="secondary-button small">新建会话</button>
           </div>
           <label class="sr-only" for="questionInput">Task</label>
           <textarea id="questionInput" name="input" rows="6" placeholder="输入任务，例如：调研特斯拉公司并给出引用" required></textarea>
           <div class="composer-footer">
             <div class="prompt-list">
-              <button type="button" data-prompt="查询北京天气和当地时间">Weather + Time</button>
-              <button type="button" data-prompt="调研特斯拉公司，概括业务、财务、竞争格局和近期动态，并给出引用">Research Report</button>
-              <button type="button" data-prompt="分析多智能体框架的发展趋势、代表项目、风险和适用场景">Multi-angle Analysis</button>
-              <button type="button" data-prompt="先调研特斯拉公司基本情况，再分析其竞争格局，最后生成风险报告">DAG Workflow</button>
+              <button type="button" data-prompt="查询北京天气和当地时间">🌤 天气 + 时间</button>
+              <button type="button" data-prompt="调研特斯拉公司，概括业务、财务、竞争格局和近期动态，并给出引用">📚 调研报告</button>
+              <button type="button" data-prompt="分析多智能体框架的发展趋势、代表项目、风险和适用场景">🔍 多角度分析</button>
+              <button type="button" data-prompt="先调研特斯拉公司基本情况，再分析其竞争格局，最后生成风险报告">🔗 分步执行</button>
             </div>
-            <p class="composer-hint">Routes tasks across direct answers, research, ReAct tools, supervisor analysis, DAG execution, and experimental swarm runs.</p>
             <div class="actions">
-              <button id="cancelButton" class="secondary-button" type="button" disabled>Cancel</button>
-              <button id="submitButton" class="primary-button" type="submit">Run task</button>
+              <button id="cancelButton" class="secondary-button" type="button" disabled>取消</button>
+              <button id="submitButton" class="primary-button" type="submit">提交任务</button>
             </div>
           </div>
         </form>
 
         <section class="result-panel">
           <div class="section-title result-title">
-            <div><span>Result</span><h2 id="stageTitle">Awaiting task</h2></div>
-            <span id="confidenceLabel">Confidence --</span>
+            <div><span>结果</span></div>
+            <span id="confidenceLabel">置信度 --</span>
           </div>
-          <article id="finalAnswer" class="answer empty">Run a task to see the final answer, citations, and generated artifacts.</article>
+          <article id="finalAnswer" class="answer empty">提交任务后，最终答案将显示在这里。</article>
           <section class="sources">
-            <h3>Sources</h3>
-            <ul id="citations" class="citations empty"><li>No sources yet.</li></ul>
+            <h3>引用来源</h3>
+            <ul id="citations" class="citations empty"><li>暂无来源。</li></ul>
           </section>
           <section class="sources">
-            <h3>Artifacts</h3>
-            <ul id="artifacts" class="citations empty"><li>No generated files.</li></ul>
+            <h3>产物文件</h3>
+            <ul id="artifacts" class="citations empty"><li>暂无产物。</li></ul>
           </section>
           <details class="raw-details">
-            <summary>Raw result</summary>
+            <summary>原始数据</summary>
             <pre id="executionDetails">{}</pre>
           </details>
         </section>
@@ -73,50 +72,45 @@
       <aside class="runtime-column">
         <section class="runtime-panel tree-panel">
           <div class="panel-heading">
-            <div><span>Execution Graph</span><small>Workflow, agent, tool, and result events</small></div>
-            <span id="eventCount">0 events</span>
+            <div><span>执行图</span></div>
+            <span id="eventCount">0</span>
           </div>
-          <div id="treeEmpty" class="empty-state">Run a task or replay history.</div>
+          <div id="treeEmpty" class="empty-state">提交任务后将在此展示执行流程。</div>
           <div id="executionTree" class="execution-tree" aria-live="polite"></div>
         </section>
 
         <section class="runtime-panel inspector-panel">
           <div class="panel-heading">
-            <div><span>Node Details</span><small>Click any graph node or event</small></div>
+            <div><span>节点详情</span></div>
           </div>
-          <pre id="selectedEvent">No node selected.</pre>
+          <pre id="selectedEvent">点击左侧执行图中的节点查看详情。</pre>
         </section>
 
         <section class="runtime-panel history-panel">
           <div class="panel-heading">
-            <div><span>Task History</span><small>Persisted tasks and replay</small></div>
-            <button id="refreshHistory" type="button">Refresh</button>
+            <div><span>历史任务</span></div>
+            <button id="refreshHistory" type="button">刷新</button>
           </div>
           <div id="taskHistory" class="task-history"></div>
         </section>
 
         <section class="runtime-panel session-panel">
           <div class="panel-heading">
-            <div><span>Session Tasks</span><small>Tasks sharing bounded context</small></div>
+            <div><span>会话任务</span></div>
           </div>
           <div id="sessionTasks" class="task-history">
-            <div class="empty-state">Select a session.</div>
+            <div class="empty-state">选择一个会话。</div>
           </div>
         </section>
 
         <details class="runtime-panel event-panel">
-          <summary>Raw event timeline</summary>
+          <summary>事件时间线</summary>
           <ol id="eventStream" class="event-stream"></ol>
           <div id="eventPath" hidden></div>
         </details>
       </aside>
     </main>
 
-    <span id="agentCount" hidden>0</span>
-    <span id="toolCount" hidden>0</span>
-    <button id="collapseEvents" hidden type="button"></button>
-    <section id="graphPanel" hidden></section>
-    <section id="timelinePanel" hidden></section>
     <script src="/static/app.js" defer></script>
   </body>
 </html>
