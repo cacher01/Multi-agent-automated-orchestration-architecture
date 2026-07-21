@@ -185,9 +185,14 @@
     }
 
     const levels = calculateLevels(nodes, edges);
+    // Type priority for tie-breaking — Final answer / result type always last
+    const typeOrder = { workflow: 0, subtask: 1, agent: 2, tool: 3, evidence: 4, result: 5 };
     const order = [...nodes].sort((left, right) => {
       const levelDiff = (levels.get(left.node_id) || 0) - (levels.get(right.node_id) || 0);
       if (levelDiff !== 0) return levelDiff;
+      const leftP = typeOrder[left.node_type] ?? 99;
+      const rightP = typeOrder[right.node_type] ?? 99;
+      if (leftP !== rightP) return leftP - rightP;
       return String(left.node_id).localeCompare(String(right.node_id));
     });
     graphEl.innerHTML = order.map((node) => {
@@ -577,7 +582,7 @@
     const response = await fetch("/sessions?limit=50");
     if (!response.ok) return;
     const sessions = await response.json();
-    select.innerHTML = '<option value="">Standalone task</option>' + sessions.map(
+    select.innerHTML = '<option value="">— 无对话（独立任务）—</option>' + sessions.map(
       (session) => `<option value="${escapeHtml(session.session_id)}">${escapeHtml(session.title)} (${session.task_count})</option>`
     ).join("");
     if (previous && sessions.some((item) => item.session_id === previous)) {
@@ -586,12 +591,12 @@
   }
 
   async function createSession() {
-    const title = window.prompt("会话名称", "新会话");
+    const title = window.prompt("给这个对话起个名字（同一对话内的任务会自动共享上下文）", "新对话");
     if (title === null) return;
     const response = await fetch("/sessions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: title.trim() || "新会话" }),
+      body: JSON.stringify({ title: title.trim() || "新对话" }),
     });
     if (!response.ok) return;
     const session = await response.json();
@@ -604,26 +609,27 @@
   async function loadSessionTasks(sessionId) {
     const container = $("sessionTasks");
     if (!sessionId) {
-      container.innerHTML = '<div class="empty-state">请选择一个会话。</div>';
+      container.innerHTML = '<div class="empty-state">请选择一个对话。<br>同一对话内的任务会自动注入前 5 个任务作为上下文。</div>';
       return;
     }
     const response = await fetch(`/sessions/${encodeURIComponent(sessionId)}`);
     if (!response.ok) {
-      container.innerHTML = '<div class="empty-state">会话不可用。</div>';
+      container.innerHTML = '<div class="empty-state">对话不可用。</div>';
       return;
     }
     const payload = await response.json();
     if (!payload.tasks.length) {
-      container.innerHTML = '<div class="empty-state">此会话暂无任务。</div>';
+      container.innerHTML = '<div class="empty-state">此对话暂无任务。<br>提交一个新任务即可开始。</div>';
       return;
     }
-    container.innerHTML = payload.tasks.map((task) => `
-      <button class="history-item" type="button" data-task-id="${escapeHtml(task.task_id)}">
+    container.innerHTML = payload.tasks.map((task, idx) => `
+      <button class="history-item thread-item" type="button" data-task-id="${escapeHtml(task.task_id)}">
+        <span class="thread-index">${idx + 1}</span>
         <span class="history-copy">
           <strong>${escapeHtml(task.input)}</strong>
           <small>${escapeHtml(task.workflow || "pending")} · ${formatDate(task.created_at)}</small>
         </span>
-        <span class="history-status">${escapeHtml(task.status)}</span>
+        <span class="history-status status-${escapeHtml(task.status)}">${escapeHtml(task.status)}</span>
       </button>`).join("");
     container.querySelectorAll(".history-item").forEach((button) => {
       button.addEventListener("click", () => replayTask(button.dataset.taskId));
