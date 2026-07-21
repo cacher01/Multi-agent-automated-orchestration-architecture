@@ -13,6 +13,7 @@ from app.llm.client import LLMResponse, MockLLMClient, OpenAICompatibleClient
 from app.orchestration.orchestrator import Orchestrator
 from app.services.event_service import EventService
 from app.services.artifact_service import ArtifactService
+from app.services.quota_service import QuotaService
 from app.services.result_service import ResultService
 from app.services.task_service import TaskService
 from app.tools.builtin.tavily_search import TavilySearchTool
@@ -50,6 +51,7 @@ def create_app(testing: bool = False) -> FastAPI:
     event_service = EventService(repository)
     result_service = ResultService(repository)
     artifact_service = ArtifactService(settings, repository)
+    quota_service = QuotaService(repository, model=settings.llm_model)
     registry = ToolRegistry()
     registry.register(CurrentTimeTool())
     registry.register(CalculatorTool())
@@ -94,6 +96,7 @@ def create_app(testing: bool = False) -> FastAPI:
     app.state.task_service = task_service
     app.state.artifact_service = artifact_service
     app.state.orchestrator = orchestrator
+    app.state.quota_service = quota_service
 
     static_dir = Path(__file__).parent / "static"
     if static_dir.exists():
@@ -207,6 +210,35 @@ def create_app(testing: bool = False) -> FastAPI:
             media_type=artifact["media_type"],
             filename=artifact["filename"],
         )
+
+    # ── Quota endpoints (embedded dashboard) ─────────────────────
+    @app.get("/quota/summary")
+    async def quota_summary(scope: str = "today"):
+        return quota_service.summary(scope)
+
+    @app.get("/quota/breakdown")
+    async def quota_breakdown(by: str = "workflow", scope: str = "today"):
+        return {"items": quota_service.breakdown(by, scope)}
+
+    @app.get("/quota/timeline")
+    async def quota_timeline(days: int = 7):
+        return {"items": quota_service.timeline(max(1, min(days, 90)))}
+
+    @app.get("/quota/limits")
+    async def quota_limits():
+        return quota_service.limits()
+
+    @app.get("/quota/recent")
+    async def quota_recent(limit: int = 12):
+        return {"items": quota_service.recent_tasks(max(1, min(limit, 50)))}
+
+    @app.get("/quota/sessions")
+    async def quota_sessions(limit: int = 8):
+        return {"items": quota_service.session_consumption(max(1, min(limit, 50)))}
+
+    @app.get("/quota/pricing")
+    async def quota_pricing():
+        return {"model": settings.llm_model, "table": {k: v for k, v in __import__("app.services.quota_service", fromlist=["MODEL_PRICING"]).MODEL_PRICING.items() if k != "default"}}
 
     @app.get("/tasks/{task_id}/stream")
     async def stream_events(task_id: str):

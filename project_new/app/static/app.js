@@ -8,12 +8,8 @@
   const statusEl = $("taskStatus");
   const taskIdEl = $("taskId");
   const workflowEl = $("workflowLabel");
-  const stageTitleEl = $("stageTitle");
   const eventCountEl = $("eventCount");
-  const agentCountEl = $("agentCount");
-  const toolCountEl = $("toolCount");
   const eventsEl = $("eventStream");
-  const pathEl = $("eventPath");
   const graphEl = $("executionTree");
   const graphEmptyEl = $("treeEmpty");
   const selectedEventEl = $("selectedEvent");
@@ -28,10 +24,10 @@
   let eventRecords = [];
   let graphNodes = new Map();
   let graphEdges = new Map();
-  let agentCount = 0;
-  let toolCount = 0;
   let activeSessionId = "";
   const terminalStatuses = new Set(["completed", "degraded", "failed", "cancelled"]);
+  // Mirror of _requests_artifact() triggers in orchestrator.py — used to show a hint badge
+  const ARTIFACT_TRIGGERS = /生成报告|导出|保存为文件|生成文件|压缩包|打包|csv|json\s*file|markdown\s*file|report\s*file|export|\bzip\b/i;
 
   function setStatus(value) {
     const status = value || "未知";
@@ -47,17 +43,11 @@
     eventRecords = [];
     graphNodes = new Map();
     graphEdges = new Map();
-    agentCount = 0;
-    toolCount = 0;
     setStatus("提交中");
     taskIdEl.textContent = "创建任务中";
     workflowEl.textContent = "等待";
-    if (stageTitleEl) stageTitleEl.textContent = question.length > 54 ? `${question.slice(0, 54)}...` : question;
     eventCountEl.textContent = "0";
-    if (agentCountEl) agentCountEl.textContent = "0";
-    if (toolCountEl) toolCountEl.textContent = "0";
     eventsEl.innerHTML = "";
-    pathEl.innerHTML = "";
     graphEl.innerHTML = "";
     graphEmptyEl.hidden = false;
     selectedEventEl.textContent = "点击节点查看详情。";
@@ -67,9 +57,11 @@
     citationsEl.innerHTML = "<li>暂无来源。</li>";
     citationsEl.classList.add("empty");
     if (artifactsEl) {
-      artifactsEl.innerHTML = "<li>暂无产物。</li>";
+      artifactsEl.innerHTML = '<li class="artifact-empty">本任务未请求导出文件。提示：在任务中加入 <code>生成报告</code> / <code>导出 csv</code> / <code>打包 zip</code> 等关键词即可生成产物。</li>';
       artifactsEl.classList.add("empty");
     }
+    const hintEl = $("artifactHint");
+    if (hintEl) hintEl.hidden = !ARTIFACT_TRIGGERS.test(question || "");
     detailsEl.textContent = "{}";
     confidenceEl.textContent = "置信度 --";
   }
@@ -97,7 +89,6 @@
     updateRunMetadata(record);
     updateGraphFromEvent(record);
     renderEvent(record, eventRecords.length);
-    renderTimelineNode(record, eventRecords.length);
   }
 
   function updateRunMetadata(record) {
@@ -105,14 +96,6 @@
     const payload = record.payload && record.payload.payload;
     if (type === "workflow_selected" && payload && payload.workflow) {
       workflowEl.textContent = payload.workflow;
-    }
-    if (type === "agent_spawned") {
-      agentCount += 1;
-      if (agentCountEl) agentCountEl.textContent = String(agentCount);
-    }
-    if (type === "tool_call_requested") {
-      toolCount += 1;
-      if (toolCountEl) toolCountEl.textContent = String(toolCount);
     }
   }
 
@@ -134,16 +117,6 @@
     });
     eventsEl.append(item);
     eventsEl.scrollTop = eventsEl.scrollHeight;
-  }
-
-  function renderTimelineNode(record, index) {
-    const type = eventType(record.payload, record.name);
-    const node = document.createElement("button");
-    node.type = "button";
-    node.className = `path-node ${classForType(type)}`;
-    node.innerHTML = `<span>${String(index).padStart(2, "0")}</span><strong>${escapeHtml(type.replaceAll("_", " "))}</strong>`;
-    node.addEventListener("click", () => selectInspector(record.payload, node));
-    pathEl.append(node);
   }
 
   function selectInspector(payload, selectedElement) {
@@ -444,16 +417,19 @@
     const response = await fetch(`/tasks/${encodeURIComponent(taskId)}/artifacts`);
     if (!response.ok) return;
     const artifacts = await response.json();
+    const hintEl = $("artifactHint");
+    if (hintEl) hintEl.hidden = artifacts.length === 0;
     artifactsEl.innerHTML = "";
     artifactsEl.classList.toggle("empty", artifacts.length === 0);
     if (!artifacts.length) {
-      artifactsEl.innerHTML = "<li>No generated files.</li>";
+      artifactsEl.innerHTML = '<li class="artifact-empty">本任务未请求导出文件。提示：在任务中加入 <code>生成报告</code> / <code>导出 csv</code> / <code>打包 zip</code> 等关键词即可生成产物。</li>';
       return;
     }
     artifacts.forEach((artifact, index) => {
       const item = document.createElement("li");
       const url = `/tasks/${encodeURIComponent(taskId)}/artifacts/${encodeURIComponent(artifact.artifact_id)}`;
-      item.innerHTML = `<span>${String(index + 1).padStart(2, "0")}</span><a href="${url}">${escapeHtml(artifact.filename)}</a>`;
+      const sizeKb = (artifact.size_bytes / 1024).toFixed(1);
+      item.innerHTML = `<span>${String(index + 1).padStart(2, "0")}</span><a href="${url}" download>${escapeHtml(artifact.filename)}</a><small class="artifact-size">${sizeKb} KB</small>`;
       artifactsEl.append(item);
     });
   }
@@ -468,6 +444,8 @@
       if (source) source.close();
       cancelButton.disabled = true;
       loadHistory();
+      refreshChip();
+      if (!popoverEl.hidden) refreshQuotaDashboard();
       if (String(status).toLowerCase() === "failed") {
         showTaskFailure(activeTaskId, payload).catch((error) => addEvent("result_error", error.message));
       } else if (String(status).toLowerCase() === "cancelled") {
@@ -672,6 +650,351 @@
 
   $("refreshHistory").addEventListener("click", loadHistory);
   $("newSessionButton").addEventListener("click", createSession);
+
+  // ── Quota dashboard ────────────────────────────────────────────
+  const chipEl = $("quotaChip");
+  const popoverEl = $("quotaPopover");
+  let currentScope = "today";
+
+  chipEl.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    const isOpen = !popoverEl.hidden;
+    if (isOpen) {
+      closePopover();
+    } else {
+      openPopover();
+      await refreshQuotaDashboard();
+    }
+  });
+  document.addEventListener("click", (event) => {
+    if (popoverEl.hidden) return;
+    if (popoverEl.contains(event.target) || chipEl.contains(event.target)) return;
+    closePopover();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !popoverEl.hidden) closePopover();
+  });
+  popoverEl.querySelectorAll(".pop-tab").forEach((tab) => {
+    tab.addEventListener("click", async () => {
+      popoverEl.querySelectorAll(".pop-tab").forEach((t) => t.classList.remove("is-active"));
+      tab.classList.add("is-active");
+      currentScope = tab.dataset.scope;
+      await refreshQuotaDashboard();
+    });
+  });
+
+  function openPopover() {
+    popoverEl.hidden = false;
+    chipEl.setAttribute("aria-expanded", "true");
+  }
+  function closePopover() {
+    popoverEl.hidden = true;
+    chipEl.setAttribute("aria-expanded", "false");
+  }
+
+  async function refreshChip() {
+    try {
+      const summary = await fetch("/quota/summary?scope=today").then((r) => r.json());
+      const tokens = summary.tokens || 0;
+      const cost = summary.cost_usd || 0;
+      $("chipTokens").textContent = formatTokens(tokens) + " tokens";
+      $("chipCost").textContent = "$" + cost.toFixed(cost < 0.01 ? 4 : 3);
+    } catch (_) {
+      $("chipTokens").textContent = "— tokens";
+      $("chipCost").textContent = "$—";
+    }
+  }
+
+  async function refreshQuotaDashboard() {
+    try {
+      const [summary, breakdown, timeline, limits, recent, sessions] = await Promise.all([
+        fetch(`/quota/summary?scope=${currentScope}`).then((r) => r.json()),
+        fetch(`/quota/breakdown?by=workflow&scope=${currentScope}`).then((r) => r.json()),
+        fetch(`/quota/timeline?days=7`).then((r) => r.json()),
+        fetch(`/quota/limits`).then((r) => r.json()),
+        fetch(`/quota/recent?limit=12`).then((r) => r.json()),
+        fetch(`/quota/sessions?limit=8`).then((r) => r.json()),
+      ]);
+      renderKpi(summary);
+      renderLimits(limits);
+      renderWorkflowBars(breakdown.items || []);
+      renderTimeline(timeline.items || []);
+      renderRecentTasks(recent.items || []);
+      renderSessions(sessions.items || []);
+    } catch (error) {
+      console.warn("Quota dashboard refresh failed:", error);
+    }
+  }
+
+  function renderKpi(summary) {
+    const tasks = summary.tasks || 0;
+    const completed = summary.completed || 0;
+    const failed = summary.failed || 0;
+    const degraded = summary.degraded || 0;
+    const tokens = summary.tokens || 0;
+    const cost = summary.cost_usd || 0;
+    const successRate = (summary.success_rate || 0) * 100;
+    const avgLatency = summary.avg_latency_seconds || 0;
+    $("kpiTasks").textContent = String(tasks);
+    $("kpiTasksSub").textContent =
+      `✓${completed} · ✗${failed} · ⚠${degraded}`;
+    $("kpiTokens").textContent = formatTokens(tokens);
+    $("kpiTokensSub").textContent = tokens >= 1000 ? "tokens used" : "tokens";
+    $("kpiCost").textContent = "$" + cost.toFixed(cost < 0.01 ? 4 : 3);
+    $("kpiCostSub").textContent = "USD estimated";
+    $("kpiSuccess").textContent = tasks ? successRate.toFixed(1) + "%" : "—";
+    $("kpiSuccessSub").textContent = avgLatency > 0
+      ? `avg ${avgLatency.toFixed(1)}s`
+      : "no timing";
+  }
+
+  function renderLimits(limits) {
+    const tokensPct = Math.round((limits.tokens_pct || 0) * 100);
+    const costPct = Math.round((limits.cost_pct || 0) * 100);
+    const tf = $("meterTokensFill");
+    const cf = $("meterCostFill");
+    tf.style.width = Math.min(100, tokensPct) + "%";
+    tf.classList.toggle("warn", tokensPct >= 70 && tokensPct < 90);
+    tf.classList.toggle("bad", tokensPct >= 90);
+    cf.style.width = Math.min(100, costPct) + "%";
+    cf.classList.toggle("warn", costPct >= 70 && costPct < 90);
+    cf.classList.toggle("bad", costPct >= 90);
+    $("meterTokensLabel").textContent =
+      `${formatTokens(limits.today_tokens)} / ${formatTokens(limits.daily_tokens_cap)} (${tokensPct}%)`;
+    $("meterCostLabel").textContent =
+      `$${(limits.today_cost || 0).toFixed(3)} / $${(limits.daily_cost_cap || 0).toFixed(2)} (${costPct}%)`;
+  }
+
+  function renderWorkflowBars(items) {
+    const host = $("chartWorkflow");
+    const legend = $("chartWorkflowLegend");
+    host.innerHTML = "";
+    legend.innerHTML = "";
+    if (!items.length) {
+      host.innerHTML = '<div class="empty-state" style="padding: 30px 0;">暂无数据</div>';
+      return;
+    }
+    const total = items.reduce((acc, x) => acc + (x.tokens || 0), 0) || 1;
+    const max = Math.max(...items.map((x) => x.tokens || 0));
+    const colors = ["#8b5cf6", "#ec4899", "#06b6d4", "#a78bfa", "#f0abfc", "#fbbf24"];
+    const w = host.clientWidth || 280;
+    const rowH = 18;
+    const gap = 6;
+    const labelW = 86;
+    const valueW = 52;
+    const barAreaW = w - labelW - valueW - 8;
+    const h = items.length * (rowH + gap) + 4;
+    const svgNS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(svgNS, "svg");
+    svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+    svg.setAttribute("preserveAspectRatio", "xMinYMid meet");
+    items.forEach((item, i) => {
+      const y = i * (rowH + gap) + 2;
+      const len = ((item.tokens || 0) / max) * barAreaW;
+      const color = colors[i % colors.length];
+      // label
+      const label = document.createElementNS(svgNS, "text");
+      label.setAttribute("x", labelW - 6);
+      label.setAttribute("y", y + rowH / 2 + 4);
+      label.setAttribute("text-anchor", "end");
+      label.setAttribute("font-size", "11");
+      label.setAttribute("font-family", "ui-monospace, JetBrains Mono, Consolas, monospace");
+      label.setAttribute("fill", "#4b4368");
+      label.textContent = String(item.key).slice(0, 12);
+      svg.appendChild(label);
+      // track
+      const track = document.createElementNS(svgNS, "rect");
+      track.setAttribute("x", labelW);
+      track.setAttribute("y", y + 3);
+      track.setAttribute("width", barAreaW);
+      track.setAttribute("height", rowH - 6);
+      track.setAttribute("rx", 4);
+      track.setAttribute("fill", "rgba(139,92,246,0.10)");
+      svg.appendChild(track);
+      // bar
+      const bar = document.createElementNS(svgNS, "rect");
+      bar.setAttribute("x", labelW);
+      bar.setAttribute("y", y + 3);
+      bar.setAttribute("width", Math.max(2, len));
+      bar.setAttribute("height", rowH - 6);
+      bar.setAttribute("rx", 4);
+      bar.setAttribute("fill", color);
+      svg.appendChild(bar);
+      // value
+      const val = document.createElementNS(svgNS, "text");
+      val.setAttribute("x", w - 4);
+      val.setAttribute("y", y + rowH / 2 + 4);
+      val.setAttribute("text-anchor", "end");
+      val.setAttribute("font-size", "10.5");
+      val.setAttribute("font-family", "ui-monospace, JetBrains Mono, Consolas, monospace");
+      val.setAttribute("font-weight", "600");
+      val.setAttribute("fill", "#16122b");
+      val.textContent = formatTokens(item.tokens);
+      svg.appendChild(val);
+      // legend entry
+      const swatch = document.createElement("span");
+      swatch.className = "swatch";
+      swatch.style.background = color;
+      const pct = (((item.tokens || 0) / total) * 100).toFixed(0);
+      legend.appendChild(swatch);
+      legend.appendChild(document.createTextNode(`${item.key} · ${pct}%`));
+    });
+    host.appendChild(svg);
+  }
+
+  function renderTimeline(items) {
+    const host = $("chartTimeline");
+    host.innerHTML = "";
+    if (!items.length) {
+      host.innerHTML = '<div class="empty-state" style="padding: 30px 0;">暂无数据</div>';
+      return;
+    }
+    const w = host.clientWidth || 320;
+    const h = 160;
+    const padL = 32, padR = 8, padT = 12, padB = 24;
+    const plotW = w - padL - padR;
+    const plotH = h - padT - padB;
+    const max = Math.max(1, ...items.map((x) => x.tokens || 0));
+    const stepX = plotW / Math.max(1, items.length - 1);
+    const points = items.map((x, i) => ({
+      x: padL + i * stepX,
+      y: padT + plotH - ((x.tokens || 0) / max) * plotH,
+      v: x.tokens || 0,
+      day: x.day,
+    }));
+    const svgNS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(svgNS, "svg");
+    svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+    svg.setAttribute("preserveAspectRatio", "none");
+    // gridlines
+    [0, 0.5, 1].forEach((t) => {
+      const y = padT + plotH * (1 - t);
+      const line = document.createElementNS(svgNS, "line");
+      line.setAttribute("x1", padL);
+      line.setAttribute("x2", w - padR);
+      line.setAttribute("y1", y);
+      line.setAttribute("y2", y);
+      line.setAttribute("stroke", "rgba(124,86,205,0.10)");
+      line.setAttribute("stroke-dasharray", "3 3");
+      svg.appendChild(line);
+      const label = document.createElementNS(svgNS, "text");
+      label.setAttribute("x", padL - 6);
+      label.setAttribute("y", y + 3);
+      label.setAttribute("text-anchor", "end");
+      label.setAttribute("font-size", "9");
+      label.setAttribute("fill", "#7c7596");
+      label.setAttribute("font-family", "ui-monospace, JetBrains Mono, Consolas, monospace");
+      label.textContent = formatTokens(max * t);
+      svg.appendChild(label);
+    });
+    // area path
+    let area = `M ${points[0].x},${padT + plotH} `;
+    points.forEach((p) => { area += `L ${p.x},${p.y} `; });
+    area += `L ${points[points.length - 1].x},${padT + plotH} Z`;
+    const areaEl = document.createElementNS(svgNS, "path");
+    areaEl.setAttribute("d", area);
+    const grad = document.createElementNS(svgNS, "linearGradient");
+    const gid = "g" + Math.random().toString(36).slice(2, 7);
+    grad.setAttribute("id", gid);
+    grad.setAttribute("x1", "0"); grad.setAttribute("y1", "0");
+    grad.setAttribute("x2", "0"); grad.setAttribute("y2", "1");
+    grad.innerHTML =
+      '<stop offset="0%" stop-color="#8b5cf6" stop-opacity="0.32"/>' +
+      '<stop offset="100%" stop-color="#8b5cf6" stop-opacity="0"/>';
+    const defs = document.createElementNS(svgNS, "defs");
+    defs.appendChild(grad);
+    svg.appendChild(defs);
+    areaEl.setAttribute("fill", `url(#${gid})`);
+    svg.appendChild(areaEl);
+    // line
+    let linePath = `M ${points[0].x},${points[0].y}`;
+    points.slice(1).forEach((p) => { linePath += ` L ${p.x},${p.y}`; });
+    const lineEl = document.createElementNS(svgNS, "path");
+    lineEl.setAttribute("d", linePath);
+    lineEl.setAttribute("fill", "none");
+    lineEl.setAttribute("stroke", "#8b5cf6");
+    lineEl.setAttribute("stroke-width", "2");
+    lineEl.setAttribute("stroke-linecap", "round");
+    lineEl.setAttribute("stroke-linejoin", "round");
+    svg.appendChild(lineEl);
+    // dots
+    points.forEach((p, i) => {
+      const c = document.createElementNS(svgNS, "circle");
+      c.setAttribute("cx", p.x);
+      c.setAttribute("cy", p.y);
+      c.setAttribute("r", i === points.length - 1 ? 4 : 2.5);
+      c.setAttribute("fill", i === points.length - 1 ? "#ec4899" : "#8b5cf6");
+      c.setAttribute("stroke", "#fff");
+      c.setAttribute("stroke-width", "1.5");
+      const t = document.createElementNS(svgNS, "title");
+      t.textContent = `${p.day}: ${formatTokens(p.v)} tokens`;
+      c.appendChild(t);
+      svg.appendChild(c);
+      // x-axis label (show every other to avoid clutter)
+      if (i % 2 === 0 || i === points.length - 1) {
+        const lbl = document.createElementNS(svgNS, "text");
+        lbl.setAttribute("x", p.x);
+        lbl.setAttribute("y", h - 6);
+        lbl.setAttribute("text-anchor", "middle");
+        lbl.setAttribute("font-size", "9.5");
+        lbl.setAttribute("fill", "#7c7596");
+        lbl.setAttribute("font-family", "ui-monospace, JetBrains Mono, Consolas, monospace");
+        lbl.textContent = p.day.slice(5);
+        svg.appendChild(lbl);
+      }
+    });
+    host.appendChild(svg);
+  }
+
+  function renderRecentTasks(items) {
+    const body = $("recentTasksBody");
+    if (!items.length) {
+      body.innerHTML = '<tr><td colspan="5" class="empty-state" style="padding: 16px;">暂无任务</td></tr>';
+      return;
+    }
+    body.innerHTML = items.map((t) => `
+      <tr data-task-id="${escapeHtml(t.task_id)}">
+        <td class="row-input" title="${escapeHtml(t.input)}">${escapeHtml(t.input)}</td>
+        <td>${escapeHtml(t.workflow)}</td>
+        <td><span class="status-chip ${escapeHtml(t.status)}">${escapeHtml(t.status)}</span></td>
+        <td class="num row-tokens">${formatTokens(t.tokens)}</td>
+        <td class="num row-cost">$${(t.cost_usd || 0).toFixed(4)}</td>
+      </tr>
+    `).join("");
+    body.querySelectorAll("tr[data-task-id]").forEach((row) => {
+      row.addEventListener("click", () => {
+        closePopover();
+        replayTask(row.dataset.taskId);
+      });
+    });
+  }
+
+  function renderSessions(items) {
+    const body = $("sessionsBody");
+    if (!items.length) {
+      body.innerHTML = '<tr><td colspan="4" class="empty-state" style="padding: 16px;">暂无对话</td></tr>';
+      return;
+    }
+    body.innerHTML = items.map((s) => `
+      <tr>
+        <td class="row-input" title="${escapeHtml(s.title)}">${escapeHtml(s.title)}</td>
+        <td class="num">${s.tasks}</td>
+        <td class="num row-tokens">${formatTokens(s.tokens)}</td>
+        <td class="num row-cost">$${(s.cost_usd || 0).toFixed(4)}</td>
+      </tr>
+    `).join("");
+  }
+
+  function formatTokens(n) {
+    if (n == null) return "—";
+    if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + "M";
+    if (n >= 1_000) return (n / 1_000).toFixed(1) + "K";
+    return String(n);
+  }
+
+  refreshChip();
+  setInterval(refreshChip, 30_000);
+
   $("sessionSelect").addEventListener("change", async (event) => {
     activeSessionId = event.target.value;
     await loadSessionTasks(activeSessionId);

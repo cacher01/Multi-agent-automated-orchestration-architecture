@@ -26,16 +26,106 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l9-9 9 9"/><path d="M5 10v10h14V10"/></svg>
             工作台
           </a>
-          <a href="/ui/quota.html">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg>
-            额度看板
-          </a>
         </nav>
       </div>
       <div class="run-status">
+        <button id="quotaChip" class="quota-chip" type="button" aria-label="额度看板" aria-expanded="false">
+          <span class="chip-icon">⚡</span>
+          <span class="chip-tokens" id="chipTokens">— tokens</span>
+          <span class="chip-cost" id="chipCost">$—</span>
+          <span class="chip-caret">▾</span>
+        </button>
         <span id="taskId" class="task-id-label">就绪</span>
         <strong id="taskStatus" data-state="idle">Idle</strong>
       </div>
+
+    <!-- Quota popover dashboard -->
+    <div id="quotaPopover" class="quota-popover" hidden>
+      <div class="popover-arrow"></div>
+      <header class="popover-header">
+        <h3>额度看板</h3>
+        <div class="popover-tabs" role="tablist">
+          <button class="pop-tab is-active" data-scope="today" type="button">今日</button>
+          <button class="pop-tab" data-scope="all" type="button">累计</button>
+        </div>
+      </header>
+
+      <section class="kpi-row">
+        <div class="kpi-tile">
+          <div class="kpi-label">任务数</div>
+          <div class="kpi-value" id="kpiTasks">—</div>
+          <div class="kpi-sub" id="kpiTasksSub">—</div>
+        </div>
+        <div class="kpi-tile">
+          <div class="kpi-label">总 Tokens</div>
+          <div class="kpi-value" id="kpiTokens">—</div>
+          <div class="kpi-sub" id="kpiTokensSub">—</div>
+        </div>
+        <div class="kpi-tile">
+          <div class="kpi-label">估算成本</div>
+          <div class="kpi-value" id="kpiCost">—</div>
+          <div class="kpi-sub" id="kpiCostSub">—</div>
+        </div>
+        <div class="kpi-tile">
+          <div class="kpi-label">成功率</div>
+          <div class="kpi-value" id="kpiSuccess">—</div>
+          <div class="kpi-sub" id="kpiSuccessSub">—</div>
+        </div>
+      </section>
+
+      <section class="meter-row">
+        <div class="meter-tile">
+          <div class="meter-label">
+            <span>Tokens 限额</span>
+            <span id="meterTokensLabel">— / —</span>
+          </div>
+          <div class="meter-track"><div class="meter-fill" id="meterTokensFill"></div></div>
+        </div>
+        <div class="meter-tile">
+          <div class="meter-label">
+            <span>成本限额</span>
+            <span id="meterCostLabel">$— / $—</span>
+          </div>
+          <div class="meter-track"><div class="meter-fill" id="meterCostFill"></div></div>
+        </div>
+      </section>
+
+      <section class="chart-grid">
+        <div class="chart-tile">
+          <h4>按工作流 Tokens 占比</h4>
+          <div id="chartWorkflow" class="chart-canvas"></div>
+          <div id="chartWorkflowLegend" class="chart-legend"></div>
+        </div>
+        <div class="chart-tile">
+          <h4>近 7 天 Tokens 趋势</h4>
+          <div id="chartTimeline" class="chart-canvas"></div>
+        </div>
+      </section>
+
+      <section class="table-tile">
+        <h4>最近任务</h4>
+        <div class="quota-table-wrap">
+          <table class="quota-table" id="recentTasksTable">
+            <thead>
+              <tr><th>任务</th><th>工作流</th><th>状态</th><th class="num">Tokens</th><th class="num">成本</th></tr>
+            </thead>
+            <tbody id="recentTasksBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="table-tile">
+        <h4>对话消耗排行</h4>
+        <div class="quota-table-wrap">
+          <table class="quota-table" id="sessionsTable">
+            <thead>
+              <tr><th>对话</th><th class="num">任务</th><th class="num">Tokens</th><th class="num">成本</th></tr>
+            </thead>
+            <tbody id="sessionsBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
     </header>
 
     <main class="workspace">
@@ -60,6 +150,7 @@
               <button type="button" data-prompt="调研特斯拉公司，概括业务、财务、竞争格局和近期动态，并给出引用">📚 调研报告</button>
               <button type="button" data-prompt="分析多智能体框架的发展趋势、代表项目、风险和适用场景">🔍 多角度分析</button>
               <button type="button" data-prompt="先调研特斯拉公司基本情况，再分析其竞争格局，最后生成风险报告">🔗 分步执行</button>
+              <button type="button" data-prompt="生成一份多智能体框架调研报告，并保存为 Markdown 文件">📄 生成报告</button>
             </div>
             <div class="actions">
               <button id="cancelButton" class="secondary-button" type="button" disabled>取消</button>
@@ -78,9 +169,14 @@
             <h3>引用来源</h3>
             <ul id="citations" class="citations empty"><li>暂无来源。</li></ul>
           </section>
-          <section class="sources">
-            <h3>产物文件</h3>
-            <ul id="artifacts" class="citations empty"><li>暂无产物。</li></ul>
+          <section class="sources artifacts-section">
+            <h3>
+              <span>产物文件</span>
+              <span id="artifactHint" class="artifact-hint" hidden>产物已请求</span>
+            </h3>
+            <ul id="artifacts" class="citations empty">
+              <li class="artifact-empty">本任务未请求导出文件。提示：在任务中加入 <code>生成报告</code> / <code>导出 csv</code> / <code>打包 zip</code> 等关键词即可生成产物。</li>
+            </ul>
           </section>
           <details class="raw-details">
             <summary>原始数据</summary>
@@ -127,7 +223,6 @@
         <details class="runtime-panel event-panel">
           <summary>事件时间线</summary>
           <ol id="eventStream" class="event-stream"></ol>
-          <div id="eventPath" hidden></div>
         </details>
       </aside>
     </main>
